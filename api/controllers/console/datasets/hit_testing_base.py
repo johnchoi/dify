@@ -47,8 +47,16 @@ class DatasetsHitTestingBase:
         parser = reqparse.RequestParser()
 
         parser.add_argument("query", type=str, location="json")
-        parser.add_argument("retrieval_model", type=dict, required=False, location="json")
-        parser.add_argument("external_retrieval_model", type=dict, required=False, location="json")
+        parser.add_argument("retrieval_model", type=dict,
+                            required=False, location="json")
+        parser.add_argument("external_retrieval_model",
+                            type=dict, required=False, location="json")
+        parser.add_argument("metadata_filtering_mode",
+                            type=str, required=False, location="json")
+        parser.add_argument("metadata_filtering_conditions",
+                            type=dict, required=False, location="json")
+        parser.add_argument("metadata_model_config",
+                            type=dict, required=False, location="json")
         return parser.parse_args()
 
     @staticmethod
@@ -60,6 +68,10 @@ class DatasetsHitTestingBase:
                 account=current_user,
                 retrieval_model=args["retrieval_model"],
                 external_retrieval_model=args["external_retrieval_model"],
+                metadata_filtering_mode=args.get("metadata_filtering_mode"),
+                metadata_filtering_conditions=args.get(
+                    "metadata_filtering_conditions"),
+                metadata_model_config=args.get("metadata_model_config"),
                 limit=10,
             )
             return {"query": response["query"], "records": marshal(response["records"], hit_testing_record_fields)}

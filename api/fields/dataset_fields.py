@@ -13,7 +13,8 @@ dataset_fields = {
     "created_at": TimestampField,
 }
 
-reranking_model_fields = {"reranking_provider_name": fields.String, "reranking_model_name": fields.String}
+reranking_model_fields = {
+    "reranking_provider_name": fields.String, "reranking_model_name": fields.String}
 
 keyword_setting_fields = {"keyword_weight": fields.Float}
 
@@ -29,6 +30,26 @@ weighted_score_fields = {
     "vector_setting": fields.Nested(vector_setting_fields),
 }
 
+# 元数据过滤条件字段定义
+metadata_condition_fields = {
+    "name": fields.String,
+    "comparison_operator": fields.String,
+    "value": fields.Raw,
+}
+
+metadata_filtering_conditions_fields = {
+    "logical_operator": fields.String,
+    "conditions": fields.List(fields.Nested(metadata_condition_fields)),
+}
+
+# 元数据模型配置字段定义
+metadata_model_config_fields = {
+    "provider": fields.String,
+    "name": fields.String,
+    "mode": fields.String,
+    "completion_params": fields.Raw,
+}
+
 dataset_retrieval_model_fields = {
     "search_method": fields.String,
     "reranking_enable": fields.Boolean,
@@ -38,6 +59,10 @@ dataset_retrieval_model_fields = {
     "top_k": fields.Integer,
     "score_threshold_enabled": fields.Boolean,
     "score_threshold": fields.Float,
+    # 添加元数据过滤相关字段
+    "metadata_filtering_mode": fields.String,
+    "metadata_filtering_conditions": fields.Nested(metadata_filtering_conditions_fields, allow_null=True),
+    "metadata_model_config": fields.Nested(metadata_model_config_fields, allow_null=True),
 }
 external_retrieval_model_fields = {
     "top_k": fields.Integer,
@@ -45,7 +70,8 @@ external_retrieval_model_fields = {
     "score_threshold_enabled": fields.Boolean,
 }
 
-tag_fields = {"id": fields.String, "name": fields.String, "type": fields.String}
+tag_fields = {"id": fields.String,
+              "name": fields.String, "type": fields.String}
 
 external_knowledge_info_fields = {
     "external_knowledge_id": fields.String,
@@ -54,7 +80,8 @@ external_knowledge_info_fields = {
     "external_knowledge_api_endpoint": fields.String,
 }
 
-doc_metadata_fields = {"id": fields.String, "name": fields.String, "type": fields.String}
+doc_metadata_fields = {"id": fields.String,
+                       "name": fields.String, "type": fields.String}
 
 dataset_detail_fields = {
     "id": fields.String,
