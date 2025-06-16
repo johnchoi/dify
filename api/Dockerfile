@@ -34,6 +34,12 @@ RUN apt-get update && \
 
 # Install Python dependencies
 COPY pyproject.toml uv.lock ./
+
+# Set UV environment variables for better network handling
+ENV UV_HTTP_TIMEOUT=300
+ENV UV_CONCURRENT_DOWNLOADS=1
+ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+
 RUN uv sync --locked
 
 # production stage
