@@ -40,7 +40,7 @@ ENV UV_HTTP_TIMEOUT=300
 ENV UV_CONCURRENT_DOWNLOADS=1
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
-RUN uv sync --locked
+RUN uv sync
 
 # production stage
 FROM base AS production
