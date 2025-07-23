@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# NLTK data packages (optional offline packages)
+api/docker/nltk_data.tar.gz
+
 # C extensions
 *.so
 

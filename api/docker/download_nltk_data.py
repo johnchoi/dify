@@ -7,8 +7,6 @@ NLTK 数据下载脚本 - 针对中国网络环境优化
 import ssl
 import socket
 import time
-import urllib.request
-import urllib.error
 from pathlib import Path
 import os
 import sys

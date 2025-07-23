@@ -104,18 +104,22 @@ COPY docker/download_nltk_data.py /tmp/download_nltk_data.py
 
 # 下载 NLTK 数据 - 使用优化脚本和重试机制
 RUN mkdir -p ${NLTK_DATA} && \
-    python /tmp/download_nltk_data.py || \
-    ( \
-        echo "使用备用方案下载 NLTK 数据..." && \
-        python -c "import nltk; import ssl; import socket; \
-        socket.setdefaulttimeout(60); \
-        ssl_context = ssl.create_default_context(); \
-        ssl_context.check_hostname = False; \
-        ssl_context.verify_mode = ssl.CERT_NONE; \
-        try: nltk.download('punkt', timeout=60, quiet=False); except: pass; \
-        try: nltk.download('averaged_perceptron_tagger', timeout=60, quiet=False); except: pass" \
-    ) && \
-    rm -f /tmp/download_nltk_data.py
+    if [ -f /tmp/docker_files/nltk_data.tar.gz ]; then \
+        echo "🎉 发现预下载的 NLTK 数据包，正在解压..."; \
+        tar -xzf /tmp/docker_files/nltk_data.tar.gz -C ${NLTK_DATA}; \
+        echo "✅ NLTK 离线数据包安装完成"; \
+    else \
+        echo "⚠️  未找到离线数据包，使用在线下载方式..."; \
+        python -c "import nltk; import ssl; import os; \
+        ssl._create_default_https_context = ssl._create_unverified_context; \
+        os.environ['PYTHONHTTPSVERIFY'] = '0'; \
+        print('🔄 开始下载 NLTK 数据...'); \
+        print('下载 punkt...'); \
+        try: nltk.download('punkt', download_dir='${NLTK_DATA}', timeout=120); print('✅ punkt 下载成功'); except Exception as e: print(f'❌ punkt 下载失败: {e}'); \
+        print('下载 averaged_perceptron_tagger...'); \
+        try: nltk.download('averaged_perceptron_tagger', download_dir='${NLTK_DATA}', timeout=120); print('✅ tagger 下载成功'); except Exception as e: print(f'❌ tagger 下载失败: {e}')"; \
+    fi && \
+    rm -rf /tmp/docker_files
 
 ENV TIKTOKEN_CACHE_DIR=/app/api/.tiktoken_cache
 
