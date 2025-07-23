@@ -60,6 +60,19 @@ ENV TZ=UTC
 
 WORKDIR /app/api
 
+# 配置国内镜像源以加速包下载
+RUN echo "deb http://mirrors.aliyun.com/debian/ bookworm main contrib non-free" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/debian/ bookworm-backports main contrib non-free" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/debian-security/ bookworm-security main contrib non-free" >> /etc/apt/sources.list
+
+# 配置 apt 加速选项
+RUN echo 'Acquire::http::timeout "10";' > /etc/apt/apt.conf.d/99timeout && \
+    echo 'Acquire::ftp::timeout "10";' >> /etc/apt/apt.conf.d/99timeout && \
+    echo 'Acquire::Retries "3";' >> /etc/apt/apt.conf.d/99timeout && \
+    echo 'APT::Get::Assume-Yes "true";' >> /etc/apt/apt.conf.d/99timeout && \
+    echo 'APT::Install-Recommends "false";' >> /etc/apt/apt.conf.d/99timeout
+
 RUN \
     apt-get update \
     # Install dependencies

@@ -1,0 +1,24 @@
+# 阿里云镜像源（推荐，速度快）
+deb http://mirrors.aliyun.com/debian/ bookworm main contrib non-free
+deb http://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free
+deb http://mirrors.aliyun.com/debian/ bookworm-backports main contrib non-free
+deb http://mirrors.aliyun.com/debian-security/ bookworm-security main contrib non-free
+
+# 备用镜像源配置（如果阿里云源有问题可以替换使用）:
+# 清华大学镜像源
+# deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm main contrib non-free
+# deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm-updates main contrib non-free
+# deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm-backports main contrib non-free
+# deb http://mirrors.tuna.tsinghua.edu.cn/debian-security/ bookworm-security main contrib non-free
+
+# 163网易镜像源
+# deb http://mirrors.163.com/debian/ bookworm main contrib non-free
+# deb http://mirrors.163.com/debian/ bookworm-updates main contrib non-free
+# deb http://mirrors.163.com/debian/ bookworm-backports main contrib non-free
+# deb http://mirrors.163.com/debian-security/ bookworm-security main contrib non-free
+
+# 华为云镜像源
+# deb http://mirrors.huaweicloud.com/debian/ bookworm main contrib non-free
+# deb http://mirrors.huaweicloud.com/debian/ bookworm-updates main contrib non-free
+# deb http://mirrors.huaweicloud.com/debian/ bookworm-backports main contrib non-free
+# deb http://mirrors.huaweicloud.com/debian-security/ bookworm-security main contrib non-free
