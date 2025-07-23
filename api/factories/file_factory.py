@@ -148,9 +148,7 @@ def _build_from_local_file(
     if strict_type_validation and detected_file_type.value != specified_type:
         raise ValueError("Detected file type does not match the specified type. Please verify the file.")
 
-    file_type = (
-        FileType(specified_type) if specified_type and specified_type != FileType.CUSTOM.value else detected_file_type
-    )
+    file_type = FileType(specified_type) if specified_type and specified_type != FileType.CUSTOM else detected_file_type
 
     return File(
         id=mapping.get("id"),
@@ -199,9 +197,7 @@ def _build_from_remote_url(
             raise ValueError("Detected file type does not match the specified type. Please verify the file.")
 
         file_type = (
-            FileType(specified_type)
-            if specified_type and specified_type != FileType.CUSTOM.value
-            else detected_file_type
+            FileType(specified_type) if specified_type and specified_type != FileType.CUSTOM else detected_file_type
         )
 
         return File(
@@ -286,9 +282,7 @@ def _build_from_tool_file(
     if strict_type_validation and specified_type and detected_file_type.value != specified_type:
         raise ValueError("Detected file type does not match the specified type. Please verify the file.")
 
-    file_type = (
-        FileType(specified_type) if specified_type and specified_type != FileType.CUSTOM.value else detected_file_type
-    )
+    file_type = FileType(specified_type) if specified_type and specified_type != FileType.CUSTOM else detected_file_type
 
     return File(
         id=mapping.get("id"),
@@ -384,7 +378,7 @@ def get_file_type_by_mime_type(mime_type: str) -> FileType:
 
 class StorageKeyLoader:
     """FileKeyLoader load the storage key from database for a list of files.
-    This loader is batched, the
+    This loader is batched, the database query count is constant regardless of the input size.
     """
 
     def __init__(self, session: Session, tenant_id: str) -> None:
@@ -445,10 +439,10 @@ class StorageKeyLoader:
             if file.transfer_method in (FileTransferMethod.LOCAL_FILE, FileTransferMethod.REMOTE_URL):
                 upload_file_row = upload_files.get(model_id)
                 if upload_file_row is None:
-                    raise ValueError(...)
+                    raise ValueError(f"Upload file not found for id: {model_id}")
                 file._storage_key = upload_file_row.key
             elif file.transfer_method == FileTransferMethod.TOOL_FILE:
                 tool_file_row = tool_files.get(model_id)
                 if tool_file_row is None:
-                    raise ValueError(...)
+                    raise ValueError(f"Tool file not found for id: {model_id}")
                 file._storage_key = tool_file_row.file_key

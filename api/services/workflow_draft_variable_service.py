@@ -5,9 +5,9 @@ from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Any, ClassVar
 
-from sqlalchemy import Engine, orm, select
+from sqlalchemy import Engine, orm
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql.expression import and_, or_
 
 from core.app.entities.app_invoke_entities import InvokeFrom
@@ -25,7 +25,8 @@ from factories.file_factory import StorageKeyLoader
 from factories.variable_factory import build_segment, segment_to_variable
 from models import App, Conversation
 from models.enums import DraftVariableType
-from models.workflow import Workflow, WorkflowDraftVariable, WorkflowNodeExecutionModel, is_system_variable_editable
+from models.workflow import Workflow, WorkflowDraftVariable, is_system_variable_editable
+from repositories.factory import DifyAPIRepositoryFactory
 
 _logger = logging.getLogger(__name__)
 
@@ -117,7 +118,24 @@ class WorkflowDraftVariableService:
     _session: Session
 
     def __init__(self, session: Session) -> None:
+        """
+        Initialize the WorkflowDraftVariableService with a SQLAlchemy session.
+
+        Args:
+            session (Session): The SQLAlchemy session used to execute database queries.
+            The provided session must be bound to an `Engine` object, not a specific `Connection`.
+
+        Raises:
+            AssertionError: If the provided session is not bound to an `Engine` object.
+        """
         self._session = session
+        engine = session.get_bind()
+        # Ensure the session is bound to a engine.
+        assert isinstance(engine, Engine)
+        session_maker = sessionmaker(bind=engine, expire_on_commit=False)
+        self._api_node_execution_repo = DifyAPIRepositoryFactory.create_api_workflow_node_execution_repository(
+            session_maker
+        )
 
     def get_variable(self, variable_id: str) -> WorkflowDraftVariable | None:
         return self._session.query(WorkflowDraftVariable).filter(WorkflowDraftVariable.id == variable_id).first()
@@ -154,7 +172,7 @@ class WorkflowDraftVariableService:
         variables = (
             # Do not load the `value` field.
             query.options(orm.defer(WorkflowDraftVariable.value))
-            .order_by(WorkflowDraftVariable.id.desc())
+            .order_by(WorkflowDraftVariable.created_at.desc())
             .limit(limit)
             .offset((page - 1) * limit)
             .all()
@@ -168,7 +186,7 @@ class WorkflowDraftVariableService:
             WorkflowDraftVariable.node_id == node_id,
         )
         query = self._session.query(WorkflowDraftVariable).filter(*criteria)
-        variables = query.order_by(WorkflowDraftVariable.id.desc()).all()
+        variables = query.order_by(WorkflowDraftVariable.created_at.desc()).all()
         return WorkflowDraftVariableList(variables=variables)
 
     def list_node_variables(self, app_id: str, node_id: str) -> WorkflowDraftVariableList:
@@ -235,7 +253,9 @@ class WorkflowDraftVariableService:
         self._session.flush()
         return variable
 
-    def _reset_node_var(self, workflow: Workflow, variable: WorkflowDraftVariable) -> WorkflowDraftVariable | None:
+    def _reset_node_var_or_sys_var(
+        self, workflow: Workflow, variable: WorkflowDraftVariable
+    ) -> WorkflowDraftVariable | None:
         # If a variable does not allow updating, it makes no sence to resetting it.
         if not variable.editable:
             return variable
@@ -246,8 +266,7 @@ class WorkflowDraftVariableService:
             _logger.warning("draft variable has no node_execution_id, id=%s, name=%s", variable.id, variable.name)
             return None
 
-        query = select(WorkflowNodeExecutionModel).where(WorkflowNodeExecutionModel.id == variable.node_execution_id)
-        node_exec = self._session.scalars(query).first()
+        node_exec = self._api_node_execution_repo.get_execution_by_id(variable.node_execution_id)
         if node_exec is None:
             _logger.warning(
                 "Node exectution not found for draft variable, id=%s, name=%s, node_execution_id=%s",
@@ -259,28 +278,35 @@ class WorkflowDraftVariableService:
             self._session.flush()
             return None
 
-        # Get node type for proper value extraction
-        node_config = workflow.get_node_config_by_id(variable.node_id)
-        node_type = workflow.get_node_type_from_node_config(node_config)
-
         outputs_dict = node_exec.outputs_dict or {}
+        # a sentinel value used to check the absent of the output variable key.
+        absent = object()
 
-        # Note: Based on the implementation in `_build_from_variable_assigner_mapping`,
-        # VariableAssignerNode (both v1 and v2) can only create conversation draft variables.
-        # For consistency, we should simply return when processing VARIABLE_ASSIGNER nodes.
-        #
-        # This implementation must remain synchronized with the `_build_from_variable_assigner_mapping`
-        # and `save` methods.
-        if node_type == NodeType.VARIABLE_ASSIGNER:
-            return variable
+        if variable.get_variable_type() == DraftVariableType.NODE:
+            # Get node type for proper value extraction
+            node_config = workflow.get_node_config_by_id(variable.node_id)
+            node_type = workflow.get_node_type_from_node_config(node_config)
 
-        if variable.name not in outputs_dict:
+            # Note: Based on the implementation in `_build_from_variable_assigner_mapping`,
+            # VariableAssignerNode (both v1 and v2) can only create conversation draft variables.
+            # For consistency, we should simply return when processing VARIABLE_ASSIGNER nodes.
+            #
+            # This implementation must remain synchronized with the `_build_from_variable_assigner_mapping`
+            # and `save` methods.
+            if node_type == NodeType.VARIABLE_ASSIGNER:
+                return variable
+            output_value = outputs_dict.get(variable.name, absent)
+        else:
+            output_value = outputs_dict.get(f"sys.{variable.name}", absent)
+
+        # We cannot use `is None` to check the existence of an output variable here as
+        # the value of the output may be `None`.
+        if output_value is absent:
             # If variable not found in execution data, delete the variable
             self._session.delete(instance=variable)
             self._session.flush()
             return None
-        value = outputs_dict[variable.name]
-        value_seg = WorkflowDraftVariable.build_segment_with_type(variable.value_type, value)
+        value_seg = WorkflowDraftVariable.build_segment_with_type(variable.value_type, output_value)
         # Extract variable value using unified logic
         variable.set_value(value_seg)
         variable.last_edited_at = None  # Reset to indicate this is a reset operation
@@ -289,12 +315,12 @@ class WorkflowDraftVariableService:
 
     def reset_variable(self, workflow: Workflow, variable: WorkflowDraftVariable) -> WorkflowDraftVariable | None:
         variable_type = variable.get_variable_type()
+        if variable_type == DraftVariableType.SYS and not is_system_variable_editable(variable.name):
+            raise VariableResetError(f"cannot reset system variable, variable_id={variable.id}")
         if variable_type == DraftVariableType.CONVERSATION:
             return self._reset_conv_var(workflow, variable)
-        elif variable_type == DraftVariableType.NODE:
-            return self._reset_node_var(workflow, variable)
         else:
-            raise VariableResetError(f"cannot reset system variable, variable_id={variable.id}")
+            return self._reset_node_var_or_sys_var(workflow, variable)
 
     def delete_variable(self, variable: WorkflowDraftVariable):
         self._session.delete(variable)
@@ -439,6 +465,9 @@ def _batch_upsert_draft_varaible(
         stmt = stmt.on_conflict_do_update(
             index_elements=WorkflowDraftVariable.unique_app_id_node_id_name(),
             set_={
+                # Refresh creation timestamp to ensure updated variables
+                # appear first in chronologically sorted result sets.
+                "created_at": stmt.excluded.created_at,
                 "updated_at": stmt.excluded.updated_at,
                 "last_edited_at": stmt.excluded.last_edited_at,
                 "description": stmt.excluded.description,
@@ -525,9 +554,6 @@ class DraftVariableSaver:
     # The type of the current node (see NodeType).
     _node_type: NodeType
 
-    # Indicates how the workflow execution was triggered (see InvokeFrom).
-    _invoke_from: InvokeFrom
-
     #
     _node_execution_id: str
 
@@ -546,15 +572,16 @@ class DraftVariableSaver:
         app_id: str,
         node_id: str,
         node_type: NodeType,
-        invoke_from: InvokeFrom,
         node_execution_id: str,
         enclosing_node_id: str | None = None,
     ):
+        # Important: `node_execution_id` parameter refers to the primary key (`id`) of the
+        # WorkflowNodeExecutionModel/WorkflowNodeExecution, not their `node_execution_id`
+        # field. These are distinct database fields with different purposes.
         self._session = session
         self._app_id = app_id
         self._node_id = node_id
         self._node_type = node_type
-        self._invoke_from = invoke_from
         self._node_execution_id = node_execution_id
         self._enclosing_node_id = enclosing_node_id
 
@@ -570,9 +597,6 @@ class DraftVariableSaver:
         )
 
     def _should_save_output_variables_for_draft(self) -> bool:
-        # Only save output variables for debugging execution of workflow.
-        if self._invoke_from != InvokeFrom.DEBUGGER:
-            return False
         if self._enclosing_node_id is not None and self._node_type != NodeType.VARIABLE_ASSIGNER:
             # Currently we do not save output variables for nodes inside loop or iteration.
             return False
