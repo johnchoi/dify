@@ -99,25 +99,35 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 ENV NLTK_DATA=/app/api/nltk_data
 ENV NLTK_DATA_TIMEOUT=60
 
-# 复制 NLTK 下载脚本
-COPY docker/download_nltk_data.py /tmp/download_nltk_data.py
+# 复制 docker 目录（包含可能的 NLTK 数据包）
+COPY docker/ /tmp/docker_files/
 
-# 下载 NLTK 数据 - 使用优化脚本和重试机制
+# 下载 NLTK 数据 - 智能检测离线数据包或在线下载
 RUN mkdir -p ${NLTK_DATA} && \
     if [ -f /tmp/docker_files/nltk_data.tar.gz ]; then \
         echo "🎉 发现预下载的 NLTK 数据包，正在解压..."; \
         tar -xzf /tmp/docker_files/nltk_data.tar.gz -C ${NLTK_DATA}; \
         echo "✅ NLTK 离线数据包安装完成"; \
     else \
-        echo "⚠️  未找到离线数据包，使用在线下载方式..."; \
-        python -c "import nltk; import ssl; import os; \
-        ssl._create_default_https_context = ssl._create_unverified_context; \
-        os.environ['PYTHONHTTPSVERIFY'] = '0'; \
-        print('🔄 开始下载 NLTK 数据...'); \
-        print('下载 punkt...'); \
-        try: nltk.download('punkt', download_dir='${NLTK_DATA}', timeout=120); print('✅ punkt 下载成功'); except Exception as e: print(f'❌ punkt 下载失败: {e}'); \
-        print('下载 averaged_perceptron_tagger...'); \
-        try: nltk.download('averaged_perceptron_tagger', download_dir='${NLTK_DATA}', timeout=120); print('✅ tagger 下载成功'); except Exception as e: print(f'❌ tagger 下载失败: {e}')"; \
+        echo "⚠️  未找到离线数据包，使用在线下载..."; \
+        python3 -c " \
+import nltk, ssl, os, sys; \
+ssl._create_default_https_context = ssl._create_unverified_context; \
+os.environ['PYTHONHTTPSVERIFY'] = '0'; \
+print('🔄 开始下载 NLTK 数据...'); \
+try: \
+    print('下载 punkt...'); \
+    result1 = nltk.download('punkt', download_dir='${NLTK_DATA}', timeout=120); \
+    print('✅ punkt 下载成功' if result1 else '❌ punkt 下载失败'); \
+    print('下载 averaged_perceptron_tagger...'); \
+    result2 = nltk.download('averaged_perceptron_tagger', download_dir='${NLTK_DATA}', timeout=120); \
+    print('✅ tagger 下载成功' if result2 else '❌ tagger 下载失败'); \
+    print('📊 下载结果: punkt={}, tagger={}'.format('成功' if result1 else '失败', '成功' if result2 else '失败')); \
+except Exception as e: \
+    print('❌ 下载过程出现异常:', str(e)); \
+    print('⚠️  NLTK 数据下载失败，但不影响容器构建'); \
+"; \
+        echo "💡 如果下载失败，应用运行时会尝试重新下载"; \
     fi && \
     rm -rf /tmp/docker_files
 
