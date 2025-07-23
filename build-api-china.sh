@@ -18,11 +18,21 @@ echo "🔧 构建目录: ./api"
 # 进入 API 目录
 cd api
 
+# 检查是否存在中国优化版本的 Dockerfile
+DOCKERFILE="Dockerfile"
+if [ -f "Dockerfile.china" ]; then
+    echo "🇨🇳 发现中国网络优化版本的 Dockerfile，使用该版本构建..."
+    DOCKERFILE="Dockerfile.china"
+fi
+
 # 使用 Docker buildx 进行优化构建
 echo "🏗️ 开始构建镜像..."
+echo "📄 使用 Dockerfile: $DOCKERFILE"
+
 docker build \
   --build-arg BUILDKIT_INLINE_CACHE=1 \
   --progress=plain \
+  -f "$DOCKERFILE" \
   -t "${FULL_IMAGE_NAME}" \
   .
 
