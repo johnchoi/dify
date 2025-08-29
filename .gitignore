@@ -218,3 +218,5 @@ mise.toml
 .roo/
 api/.env.backup
 /clickzetta
+.claude
+CLAUDE.md
