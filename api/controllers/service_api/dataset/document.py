@@ -25,6 +25,7 @@ from controllers.service_api.wraps import (
     cloud_edition_billing_rate_limit_check,
     cloud_edition_billing_resource_check,
 )
+from core.dataset.metadata_filter_parser import MetadataFilterParser
 from core.errors.error import ProviderTokenNotInitError
 from extensions.ext_database import db
 from fields.document_fields import document_fields, document_status_fields
@@ -398,6 +399,8 @@ class DocumentListApi(DatasetApiResource):
         page = request.args.get("page", default=1, type=int)
         limit = request.args.get("limit", default=20, type=int)
         search = request.args.get("keyword", default=None, type=str)
+        metadata_filter = request.args.get("metadata_filter", default=None, type=str)
+        
         dataset = db.session.query(Dataset).filter(Dataset.tenant_id == tenant_id, Dataset.id == dataset_id).first()
         if not dataset:
             raise NotFound("Dataset not found.")
@@ -407,6 +410,31 @@ class DocumentListApi(DatasetApiResource):
         if search:
             search = f"%{search}%"
             query = query.filter(Document.name.like(search))
+
+        # 应用元数据过滤条件
+        if metadata_filter:
+            try:
+                # 解析和验证过滤条件
+                filter_dict = MetadataFilterParser.parse_filter_string(metadata_filter)
+                validation_errors = MetadataFilterParser.validate_filter_conditions(filter_dict)
+                
+                if validation_errors:
+                    from werkzeug.exceptions import BadRequest
+                    raise BadRequest({
+                        "error": "Invalid metadata filter conditions",
+                        "details": validation_errors,
+                        "supported_operators": MetadataFilterParser.SUPPORTED_OPERATORS
+                    })
+                
+                # 构建查询条件
+                query = MetadataFilterParser.build_query_conditions(query, filter_dict)
+                
+            except BadRequest:
+                # 重新抛出BadRequest异常
+                raise
+            except Exception as e:
+                from werkzeug.exceptions import BadRequest
+                raise BadRequest(f"Failed to process metadata filter: {str(e)}")
 
         query = query.order_by(desc(Document.created_at), desc(Document.position))
 
