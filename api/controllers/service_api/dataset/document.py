@@ -497,11 +497,12 @@ class DocumentListApi(DatasetApiResource):
 
                 if validation_errors:
                     from werkzeug.exceptions import BadRequest
-                    raise BadRequest({
+                    error_message = {
                         "error": "Invalid metadata filter conditions",
                         "details": validation_errors,
                         "supported_operators": MetadataFilterParser.SUPPORTED_OPERATORS
-                    })
+                    }
+                    raise BadRequest(description=json.dumps(error_message))
 
                 # 构建查询条件
                 query = MetadataFilterParser.build_query_conditions(
@@ -510,10 +511,14 @@ class DocumentListApi(DatasetApiResource):
             except BadRequest:
                 # 重新抛出BadRequest异常
                 raise
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 from werkzeug.exceptions import BadRequest
-                raise BadRequest(
-                    f"Failed to process metadata filter: {str(e)}")
+                raise BadRequest(f"Invalid metadata filter format: {str(e)}")
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Unexpected error processing metadata filter: {e}")
+                from werkzeug.exceptions import BadRequest
+                raise BadRequest("Failed to process metadata filter")
 
         query = query.order_by(desc(Document.created_at),
                                desc(Document.position))
