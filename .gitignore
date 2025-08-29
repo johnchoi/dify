@@ -220,3 +220,5 @@ scripts/
 # AI Assistant
 .roo/
 api/.env.backup
+.claude
+CLAUDE.md
