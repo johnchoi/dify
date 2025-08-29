@@ -2,8 +2,8 @@ import {
   createContext,
   useContext,
 } from 'use-context-selector'
-import type { Locale } from '@/i18n'
-import { getDocLanguage, getLanguage, getPricingPageLanguage } from '@/i18n/language'
+import type { Locale } from '@/i18n-config'
+import { getDocLanguage, getLanguage, getPricingPageLanguage } from '@/i18n-config/language'
 import { noop } from 'lodash-es'
 
 type II18NContext = {
@@ -32,7 +32,7 @@ export const useGetPricingPageLanguage = () => {
   return getPricingPageLanguage(locale)
 }
 
-const defaultDocBaseUrl = 'https://docs.dify.ai'
+export const defaultDocBaseUrl = 'https://docs.dify.ai'
 export const useDocLink = (baseUrl?: string): ((path?: string, pathMap?: { [index: string]: string }) => string) => {
   let baseDocUrl = baseUrl || defaultDocBaseUrl
   baseDocUrl = (baseDocUrl.endsWith('/')) ? baseDocUrl.slice(0, -1) : baseDocUrl
