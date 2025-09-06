@@ -585,6 +585,7 @@ services:
     build:
       context: ../api
       dockerfile: Dockerfile
+    image: langgenius/dify-api:1.8.0
     restart: always
     environment:
       # Use the shared environment variables.
