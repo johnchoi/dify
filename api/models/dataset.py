@@ -472,6 +472,8 @@ class Document(Base):
 
     @property
     def doc_metadata_details(self):
+        metadata_list = []
+        
         if self.doc_metadata:
             document_metadatas = (
                 db.session.query(DatasetMetadata)
@@ -481,7 +483,6 @@ class Document(Base):
                 )
                 .all()
             )
-            metadata_list = []
             for metadata in document_metadatas:
                 metadata_dict = {
                     "id": metadata.id,
@@ -490,11 +491,13 @@ class Document(Base):
                     "value": self.doc_metadata.get(metadata.name),
                 }
                 metadata_list.append(metadata_dict)
-            # deal built-in fields
+        
+        # Always add built-in fields if enabled
+        if hasattr(self, 'dataset') and self.dataset and self.dataset.built_in_field_enabled:
             metadata_list.extend(self.get_built_in_fields())
 
-            return metadata_list
-        return None
+        # Always return a list, even if empty (requirement 1.3)
+        return metadata_list
 
     @property
     def process_rule_dict(self):
