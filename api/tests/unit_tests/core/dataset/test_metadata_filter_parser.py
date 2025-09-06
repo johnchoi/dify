@@ -140,6 +140,23 @@ class TestMetadataFilterValidation:
         assert len(errors) == 1
         assert "Value for 'contains' operator must be string or number" in errors[0]
 
+    def test_validate_string_contains_operator_with_valid_value(self):
+        """测试string_contains操作符的有效值"""
+        filter_dict = {
+            "skills": {"string_contains": "Java"},
+            "description": {"string_contains": "机器学习"},
+            "version": {"string_contains": 2.0}
+        }
+        errors = MetadataFilterParser.validate_filter_conditions(filter_dict)
+        assert errors == []
+
+    def test_validate_string_contains_operator_with_invalid_value(self):
+        """测试string_contains操作符的无效值"""
+        filter_dict = {"skills": {"string_contains": ["invalid_list"]}}
+        errors = MetadataFilterParser.validate_filter_conditions(filter_dict)
+        assert len(errors) == 1
+        assert "Value for 'string_contains' operator must be string or number" in errors[0]
+
     def test_validate_multiple_errors(self):
         """测试多个验证错误"""
         filter_dict = {
@@ -220,6 +237,19 @@ class TestQueryConditionBuilding:
     def test_build_contains_conditions(self, mock_query):
         """测试contains操作符条件的查询构建"""
         filter_dict = {"tags": {"contains": "AI"}}
+        
+        # Mock filter方法链
+        mock_query.filter.return_value = mock_query
+        
+        result = MetadataFilterParser.build_query_conditions(mock_query, filter_dict)
+        
+        # 验证filter方法被调用
+        assert mock_query.filter.called
+        assert result == mock_query
+
+    def test_build_string_contains_conditions(self, mock_query):
+        """测试string_contains操作符条件的查询构建"""
+        filter_dict = {"skills": {"string_contains": "Java"}}
         
         # Mock filter方法链
         mock_query.filter.return_value = mock_query
@@ -315,13 +345,137 @@ class TestOperatorValueValidation:
         error = MetadataFilterParser._validate_operator_value("contains", ["invalid_list"])
         assert "Value for 'contains' operator must be string or number" in error
 
+    def test_validate_operator_value_string_contains_valid(self):
+        """测试string_contains操作符的有效值验证"""
+        error = MetadataFilterParser._validate_operator_value("string_contains", "Java")
+        assert error == ""
+        
+        error = MetadataFilterParser._validate_operator_value("string_contains", 123)
+        assert error == ""
+        
+        error = MetadataFilterParser._validate_operator_value("string_contains", 3.14)
+        assert error == ""
+
+    def test_validate_operator_value_string_contains_invalid(self):
+        """测试string_contains操作符的无效值验证"""
+        error = MetadataFilterParser._validate_operator_value("string_contains", ["invalid_list"])
+        assert "Value for 'string_contains' operator must be string or number" in error
+
+
+class TestMetadataFilterSecurity:
+    """元数据过滤器安全性测试"""
+
+    def test_field_name_sql_injection_prevention(self):
+        """测试防止SQL注入的字段名验证"""
+        malicious_fields = [
+            "'; DROP TABLE documents; --",
+            "field'; UNION SELECT * FROM users; --",
+            "field' OR '1'='1",
+            "field\"; DELETE FROM documents; --",
+            "field); DROP TABLE users; --",
+            "field' AND 1=1; SELECT * FROM users; --"
+        ]
+        for field in malicious_fields:
+            filter_dict = {field: "value"}
+            errors = MetadataFilterParser.validate_filter_conditions(filter_dict)
+            assert len(errors) > 0
+            assert "Invalid field name" in errors[0]
+
+    def test_sql_keyword_field_names_blocked(self):
+        """测试SQL关键字作为字段名被阻止"""
+        sql_keywords = [
+            "select", "insert", "update", "delete", "drop", "create",
+            "grant", "revoke", "union", "exec", "execute", "call",
+            "truncate", "alter", "merge", "declare", "set"
+        ]
+        for keyword in sql_keywords:
+            filter_dict = {keyword: "value"}
+            errors = MetadataFilterParser.validate_filter_conditions(filter_dict)
+            assert len(errors) > 0
+            assert "Invalid field name" in errors[0]
+
+    def test_like_injection_prevention(self):
+        """测试防止LIKE模式注入"""
+        malicious_values = [
+            "test%'; DROP TABLE documents; --",  # SQL注入尝试
+            "test_pattern",  # 应该转义下划线
+            "test%pattern",  # 应该转义百分号
+            "test\\pattern", # 应该转义反斜杠
+            "%",  # 单独的通配符
+            "_",  # 单独的通配符
+            "\\%", # 已转义的字符
+            "\\_"  # 已转义的字符
+        ]
+        
+        for value in malicious_values:
+            # 测试转义函数
+            escaped = MetadataFilterParser._escape_like_pattern(value)
+            # 确保特殊字符被正确转义
+            if '%' in value and not value.startswith('\\%'):
+                assert '\\%' in escaped or '%' not in value
+            if '_' in value and not value.startswith('\\_'):
+                assert '\\_' in escaped or '_' not in value
+            if '\\' in value:
+                assert '\\\\' in escaped
+
+    def test_field_name_length_limits(self):
+        """测试字段名长度限制"""
+        long_field = "a" * 101  # 超过100字符限制
+        filter_dict = {long_field: "value"}
+        errors = MetadataFilterParser.validate_filter_conditions(filter_dict)
+        assert len(errors) > 0
+        assert "Invalid field name" in errors[0]
+
+    def test_field_name_character_restrictions(self):
+        """测试字段名字符限制"""
+        invalid_field_names = [
+            "field-name",  # 连字符不允许
+            "field.name",  # 点号不允许
+            "field name",  # 空格不允许
+            "field@name",  # 特殊字符不允许
+            "123field",    # 数字开头不允许
+            "",            # 空字符串
+            "field$name",  # 美元符号不允许
+            "field#name"   # 井号不允许
+        ]
+        
+        for field_name in invalid_field_names:
+            if field_name:  # 跳过空字符串，因为会在其他地方处理
+                filter_dict = {field_name: "value"}
+                errors = MetadataFilterParser.validate_filter_conditions(filter_dict)
+                assert len(errors) > 0
+                assert "Invalid field name" in errors[0]
+
+    def test_escape_like_pattern_function(self):
+        """测试LIKE模式转义函数"""
+        test_cases = [
+            ("normal_text", "normal_text"),
+            ("text%with%wildcards", "text\\%with\\%wildcards"),
+            ("text_with_underscores", "text\\_with\\_underscores"),
+            ("text\\with\\backslashes", "text\\\\with\\\\backslashes"),
+            ("%_\\", "\\%\\_\\\\"),
+            ("", ""),
+            (123, "123")  # 测试非字符串输入
+        ]
+        
+        for input_value, expected_output in test_cases:
+            result = MetadataFilterParser._escape_like_pattern(input_value)
+            assert result == expected_output
+
+    def test_string_contains_with_escaped_patterns(self):
+        """测试string_contains操作符与转义模式"""
+        # 这个测试验证转义后的模式不会被误解释
+        filter_dict = {"skills": {"string_contains": "test%pattern"}}
+        errors = MetadataFilterParser.validate_filter_conditions(filter_dict)
+        assert errors == []  # 应该通过验证
+
 
 class TestSupportedOperators:
     """支持的操作符常量测试"""
 
     def test_supported_operators_constant(self):
         """测试支持的操作符常量"""
-        expected_operators = ["in", "gt", "gte", "lt", "lte", "contains"]
+        expected_operators = ["in", "gt", "gte", "lt", "lte", "contains", "string_contains"]
         assert MetadataFilterParser.SUPPORTED_OPERATORS == expected_operators
 
     def test_all_operators_are_strings(self):

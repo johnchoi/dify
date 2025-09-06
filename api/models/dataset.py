@@ -472,6 +472,14 @@ class Document(Base):
 
     @property
     def doc_metadata_details(self):
+        """
+        Returns a list of metadata details for this document.
+        Always returns a list, even if empty (never None).
+        Includes both custom metadata fields and built-in fields if enabled.
+        
+        Returns:
+            list: List of metadata dictionaries with keys: id, name, type, value
+        """
         metadata_list = []
         
         if self.doc_metadata:

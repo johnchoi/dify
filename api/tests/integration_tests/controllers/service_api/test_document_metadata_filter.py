@@ -71,6 +71,21 @@ class TestDocumentMetadataFilterServiceAPI:
         doc3.created_at = datetime.utcnow()
         documents.append(doc3)
         
+        # 文档4：包含逗号分割字符串的文档
+        doc4 = Document()
+        doc4.id = str(uuid.uuid4())
+        doc4.dataset_id = mock_dataset.id
+        doc4.tenant_id = mock_dataset.tenant_id
+        doc4.name = "全栈开发文档.md"
+        doc4.doc_metadata = {
+            "author": "赵六",
+            "category": "技术",
+            "word_count": 2500,
+            "skills": "Python,Java,React,Node.js,Docker"  # 逗号分割字符串
+        }
+        doc4.created_at = datetime.utcnow()
+        documents.append(doc4)
+        
         return documents
 
     def test_get_documents_without_metadata_filter(self, test_client, mock_dataset, mock_documents_with_metadata):
@@ -99,7 +114,7 @@ class TestDocumentMetadataFilterServiceAPI:
             assert 'total' in data
             assert 'page' in data
             assert 'limit' in data
-            assert len(data['data']) == 3
+            assert len(data['data']) == 4
 
     def test_get_documents_with_exact_match_filter(self, test_client, mock_dataset, mock_documents_with_metadata):
         """测试精确匹配过滤"""
@@ -355,3 +370,56 @@ class TestDocumentMetadataFilterServiceAPI:
                 assert 'doc_metadata' in doc
                 # 注意：实际的marshal过程会通过doc_metadata_details属性返回结构化格式
                 # 这里我们主要验证字段存在
+
+    def test_get_documents_with_string_contains_filter(self, test_client, mock_dataset, mock_documents_with_metadata):
+        """测试string_contains操作符过滤逗号分割字符串"""
+        metadata_filter = json.dumps({"skills": {"string_contains": "Java"}})
+        
+        with mock.patch('controllers.service_api.dataset.document.db') as mock_db:
+            mock_db.session.query.return_value.filter.return_value.first.return_value = mock_dataset
+            
+            # 模拟过滤后的结果（包含"Java"技能的文档）
+            # 应该匹配 doc4: "Python,Java,React,Node.js,Docker"
+            filtered_docs = [doc for doc in mock_documents_with_metadata 
+                           if "Java" in doc.doc_metadata.get("skills", "")]
+            
+            mock_paginated = mock.Mock()
+            mock_paginated.items = filtered_docs
+            mock_paginated.total = len(filtered_docs)
+            mock_db.paginate.return_value = mock_paginated
+            
+            response = test_client.get(
+                f'/v1/datasets/{mock_dataset.id}/documents',
+                query_string={'metadata_filter': metadata_filter},
+                headers={'Authorization': 'Bearer test-api-key'}
+            )
+            
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data['total'] == 1  # 只有 doc4 包含 "Java" 技能
+
+    def test_get_documents_with_string_contains_multiple_matches(self, test_client, mock_dataset, mock_documents_with_metadata):
+        """测试string_contains操作符匹配多个结果"""
+        metadata_filter = json.dumps({"skills": {"string_contains": "Python"}})
+        
+        with mock.patch('controllers.service_api.dataset.document.db') as mock_db:
+            mock_db.session.query.return_value.filter.return_value.first.return_value = mock_dataset
+            
+            # 模拟过滤后的结果（包含"Python"技能的文档）
+            filtered_docs = [doc for doc in mock_documents_with_metadata 
+                           if "Python" in doc.doc_metadata.get("skills", "")]
+            
+            mock_paginated = mock.Mock()
+            mock_paginated.items = filtered_docs
+            mock_paginated.total = len(filtered_docs)
+            mock_db.paginate.return_value = mock_paginated
+            
+            response = test_client.get(
+                f'/v1/datasets/{mock_dataset.id}/documents',
+                query_string={'metadata_filter': metadata_filter},
+                headers={'Authorization': 'Bearer test-api-key'}
+            )
+            
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data['total'] == 1  # 只有 doc4 包含 "Python" 技能

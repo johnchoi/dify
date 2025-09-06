@@ -4,7 +4,7 @@ import re
 from json import JSONDecodeError
 from typing import Any, Dict, List
 
-from sqlalchemy import and_, Float
+from sqlalchemy import and_, or_, Float
 from sqlalchemy.exc import DataError
 from werkzeug.exceptions import BadRequest
 
@@ -22,9 +22,11 @@ class MetadataFilterParser:
     - 多值匹配: {"field": {"in": ["value1", "value2"]}}
     - 数值比较: {"field": {"gt": 100}}, {"field": {"gte": 100}}, {"field": {"lt": 100}}, {"field": {"lte": 100}}
     - 数组包含: {"field": {"contains": "value"}}
+    - 字符串包含: {"field": {"string_contains": "value"}} (适用于逗号分割字符串)
     """
 
-    SUPPORTED_OPERATORS = ["in", "gt", "gte", "lt", "lte", "contains"]
+    SUPPORTED_OPERATORS = ["in", "gt", "gte",
+                           "lt", "lte", "contains", "string_contains"]
 
     # 允许的元数据字段名（安全白名单）
     # 注意：这是一个基础的安全措施，实际部署时应该从数据库动态加载或配置文件读取
@@ -52,13 +54,47 @@ class MetadataFilterParser:
         if not MetadataFilterParser.FIELD_NAME_PATTERN.match(field):
             return False
 
-        # 防止SQL关键字注入
-        sql_keywords = {'select', 'insert', 'update', 'delete',
-                        'drop', 'create', 'alter', 'union', 'exec', 'execute'}
+        # 防止SQL关键字注入 - 扩展的危险关键字列表
+        sql_keywords = {
+            # 基础DML操作
+            'select', 'insert', 'update', 'delete', 'merge', 'replace',
+            # DDL操作
+            'create', 'drop', 'alter', 'truncate', 'rename',
+            # 权限相关
+            'grant', 'revoke', 'deny',
+            # 程序控制
+            'exec', 'execute', 'call', 'declare', 'set',
+            # 数据操作
+            'union', 'join', 'where', 'having', 'order', 'group',
+            # 事务控制
+            'commit', 'rollback', 'begin', 'transaction', 'savepoint',
+            # 系统函数和命令
+            'show', 'describe', 'explain', 'analyze', 'vacuum',
+            # 其他潜在危险操作
+            'load', 'import', 'export', 'backup', 'restore', 'copy'
+        }
         if field.lower() in sql_keywords:
             return False
 
         return True
+
+    @staticmethod
+    def _escape_like_pattern(value: str) -> str:
+        """
+        转义LIKE模式中的特殊字符，防止LIKE注入攻击。
+        
+        Args:
+            value: 需要转义的值
+            
+        Returns:
+            转义后的值
+        """
+        if not isinstance(value, str):
+            value = str(value)
+        
+        # 转义LIKE模式中的特殊字符：% _ \
+        # 注意：反斜杠必须首先转义
+        return value.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
 
     @staticmethod
     def parse_filter_string(filter_str: str) -> Dict[str, Any]:
@@ -165,6 +201,9 @@ class MetadataFilterParser:
         elif operator == "contains":
             if not isinstance(value, (str, int, float)):
                 return "Value for 'contains' operator must be string or number"
+        elif operator == "string_contains":
+            if not isinstance(value, (str, int, float)):
+                return "Value for 'string_contains' operator must be string or number"
 
         return ""
 
@@ -195,7 +234,8 @@ class MetadataFilterParser:
                 if not MetadataFilterParser._validate_field_name(field):
                     logger.warning(f"Invalid field name: {field}")
                     from werkzeug.exceptions import BadRequest
-                    raise BadRequest(f"Invalid field name: '{field}'. Field names must contain only letters, numbers, and underscores, and cannot be SQL keywords.")
+                    raise BadRequest(
+                        f"Invalid field name: '{field}'. Field names must contain only letters, numbers, and underscores, and cannot be SQL keywords.")
 
                 field_conditions = MetadataFilterParser._build_field_conditions(
                     field, condition)
@@ -206,15 +246,19 @@ class MetadataFilterParser:
             except (ValueError, TypeError) as e:
                 logger.warning(f"Invalid condition for field '{field}': {e}")
                 from werkzeug.exceptions import BadRequest
-                raise BadRequest(f"Invalid condition for field '{field}': {str(e)}")
+                raise BadRequest(
+                    f"Invalid condition for field '{field}': {str(e)}")
             except DataError as e:
                 logger.error(f"Database error for field '{field}': {e}")
                 from werkzeug.exceptions import BadRequest
-                raise BadRequest(f"Invalid data format for field '{field}': {str(e)}")
+                raise BadRequest(
+                    f"Invalid data format for field '{field}': {str(e)}")
             except Exception as e:
-                logger.error(f"Unexpected error building condition for field '{field}': {e}")
+                logger.error(
+                    f"Unexpected error building condition for field '{field}': {e}")
                 from werkzeug.exceptions import BadRequest
-                raise BadRequest(f"Failed to process filter condition for field '{field}': {str(e)}")
+                raise BadRequest(
+                    f"Failed to process filter condition for field '{field}': {str(e)}")
 
         # 使用AND逻辑组合所有条件
         if conditions:
@@ -293,7 +337,18 @@ class MetadataFilterParser:
                     f"No valid values for IN operator on field: {field}")
                 return None
 
-            return Document.doc_metadata[field].astext.in_(string_values)
+            # 使用OR条件组合多个精确匹配，避免.in_()兼容性问题
+            conditions = []
+            for val in string_values:
+                conditions.append(Document.doc_metadata[field].astext == val)
+
+            # 确保至少有一个条件，避免空条件列表导致的错误
+            if not conditions:
+                logger.warning(
+                    f"No valid conditions created for IN operator on field: {field}")
+                return None
+
+            return or_(*conditions)
 
         elif operator == "gt":
             return MetadataFilterParser._build_numeric_condition(field, ">", value)
@@ -311,14 +366,44 @@ class MetadataFilterParser:
                     f"Invalid field name in contains condition: {field}")
                 return None
 
+            # 验证值不为空
+            if value is None or (isinstance(value, str) and not value.strip()):
+                logger.warning(
+                    f"Empty or None value for contains operator on field: {field}")
+                return None
+
             try:
-                # 数组元素包含查询：使用JSONB @> 操作符检查数组是否包含指定值
-                # 将值转换为JSON格式以进行JSONB比较
-                json_value = json.dumps(str(value))
-                return Document.doc_metadata[field].op('@>')(json_value)
+                # 数组元素包含查询：使用 ? 操作符检查JSONB数组是否包含指定值
+                # 这是标准的PostgreSQL JSONB包含操作符，适用于数组和对象
+                return Document.doc_metadata[field].op('?')(str(value))
             except Exception as e:
                 logger.warning(
                     f"Failed to build contains condition for field '{field}': {e}")
+                return None
+
+        elif operator == "string_contains":
+            # 字符串子串包含查询：专门用于逗号分割字符串等场景
+            if not MetadataFilterParser._validate_field_name(field):
+                logger.warning(
+                    f"Invalid field name in string_contains condition: {field}")
+                return None
+
+            # 验证值不为空
+            if value is None or (isinstance(value, str) and not value.strip()):
+                logger.warning(
+                    f"Empty or None value for string_contains operator on field: {field}")
+                return None
+
+            try:
+                # 使用 LIKE 操作符进行部分字符串匹配
+                # 这适用于逗号分割字符串："Python,Java,React" 可以匹配 "Java"
+                # 安全转义LIKE模式特殊字符以防止注入攻击
+                escaped_value = MetadataFilterParser._escape_like_pattern(str(value))
+                search_value = f"%{escaped_value}%"
+                return Document.doc_metadata[field].astext.like(search_value, escape='\\')
+            except Exception as e:
+                logger.warning(
+                    f"Failed to build string_contains condition for field '{field}': {e}")
                 return None
 
         else:

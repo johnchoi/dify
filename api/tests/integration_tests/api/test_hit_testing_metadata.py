@@ -199,7 +199,7 @@ class TestHitTestingMetadata:
         
         # 验证空元数据处理
         metadata_details = document.doc_metadata_details
-        assert metadata_details is None  # 当前实现返回 None
+        assert metadata_details == []  # 修复后返回空数组而不是 None
         
         # 清理
         db.session.delete(document)
