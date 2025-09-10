@@ -53,6 +53,10 @@ class HitTestingService:
                                                                retrieval_model_config.get('score_threshold_enabled', False)),
                 'score_threshold': retrieval_model.get('score_threshold',
                                                        retrieval_model_config.get('score_threshold')),
+                # 添加元数据过滤字段的处理
+                'metadata_filtering_mode': retrieval_model.get('metadata_filtering_mode', retrieval_model_config.get('metadata_filtering_mode')),
+                'metadata_filtering_conditions': retrieval_model.get('metadata_filtering_conditions', retrieval_model_config.get('metadata_filtering_conditions')),
+                'metadata_model_config': retrieval_model.get('metadata_model_config', retrieval_model_config.get('metadata_model_config')),
             }
 
         if external_retrieval_model:
