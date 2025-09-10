@@ -105,7 +105,7 @@ class MetadataFilteringCondition(BaseModel):
     """
 
     logical_operator: Optional[Literal["and", "or"]] = "and"
-    conditions: Optional[list[Condition]] = Field(default=None, deprecated=True)
+    conditions: Optional[list[Condition]] = None
 
 
 class KnowledgeRetrievalNodeData(BaseNodeData):
@@ -119,7 +119,8 @@ class KnowledgeRetrievalNodeData(BaseNodeData):
     retrieval_mode: Literal["single", "multiple"]
     multiple_retrieval_config: Optional[MultipleRetrievalConfig] = None
     single_retrieval_config: Optional[SingleRetrievalConfig] = None
-    metadata_filtering_mode: Optional[Literal["disabled", "automatic", "manual"]] = "disabled"
+    metadata_filtering_mode: Optional[Literal["disabled",
+                                              "automatic", "manual"]] = "disabled"
     metadata_model_config: Optional[ModelConfig] = None
     metadata_filtering_conditions: Optional[MetadataFilteringCondition] = None
     vision: VisionConfig = Field(default_factory=VisionConfig)

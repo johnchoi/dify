@@ -116,7 +116,8 @@ class VariableEntity(BaseModel):
     options: Sequence[str] = Field(default_factory=list)
     allowed_file_types: Sequence[FileType] = Field(default_factory=list)
     allowed_file_extensions: Sequence[str] = Field(default_factory=list)
-    allowed_file_upload_methods: Sequence[FileTransferMethod] = Field(default_factory=list)
+    allowed_file_upload_methods: Sequence[FileTransferMethod] = Field(
+        default_factory=list)
 
     @field_validator("description", mode="before")
     @classmethod
@@ -187,7 +188,7 @@ class MetadataFilteringCondition(BaseModel):
     """
 
     logical_operator: Optional[Literal["and", "or"]] = "and"
-    conditions: Optional[list[Condition]] = Field(default=None, deprecated=True)
+    conditions: Optional[list[Condition]] = None
 
 
 class DatasetRetrieveConfigEntity(BaseModel):
@@ -226,7 +227,8 @@ class DatasetRetrieveConfigEntity(BaseModel):
     reranking_model: Optional[dict] = None
     weights: Optional[dict] = None
     reranking_enabled: Optional[bool] = True
-    metadata_filtering_mode: Optional[Literal["disabled", "automatic", "manual"]] = "disabled"
+    metadata_filtering_mode: Optional[Literal["disabled",
+                                              "automatic", "manual"]] = "disabled"
     metadata_model_config: Optional[ModelConfig] = None
     metadata_filtering_conditions: Optional[MetadataFilteringCondition] = None
 
